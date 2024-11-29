@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "xtdb.fullname" . }}-config
+  namespace: {{ .Release.Namespace | quote }}
+  labels: {{- include "xtdb.labels" . | nindent 4 }}
+data:
+  google_cloud_config.yaml: |
+    txLog: !Kafka
+      {{- with .Values.xtdb.kafka }}
+      bootstrapServers: {{ printf "%s:%s" .host (.port | toString) | quote }}
+      txTopic: {{ .txTopic | quote }}
+      filesTopic: {{ .filesTopic | quote }}
+      autoCreateTopics: {{ .autoCreateTopics | default "false" }}
+      propertiesMap:
+        "security.protocol": {{ .securityProtocol | quote }}
+        {{- if eq .securityProtocol "SSL" }}
+        "ssl.truststore.type": {{ .tls.truststoreType | quote }}
+        "ssl.truststore.location": {{ .tls.truststorePath | quote }}
+        {{- end }}
+      {{- end }}
+
+    storage: !Remote
+      {{- with .Values.xtdb.objectStore }}
+      objectStore: !GoogleCloud
+        projectId: {{ required "Missing GCP Project ID (xtdb.objectStore.projectId)" .projectId | quote }}
+        bucket: {{ required "Missing GCS Bucket Name (xtdb.objectStore.bucket)" .bucket | quote }}
+        prefix: {{ .prefix | default (printf "%s-data" (include "xtdb.fullname" $)) }}
+      localDiskCache: {{ .localDiskCache | default "/var/lib/xtdb/buffers/disk-cache" }}
+      {{- end }}
+
+    healthz:
+      port: 8080
+
+    modules:
+      - !HttpServer
+        port: 3000

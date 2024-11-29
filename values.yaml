@@ -1,0 +1,157 @@
+# Default values for xtdb.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+imagePullSecrets: [ ]
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: { }
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+service:
+  type: ClusterIP
+  pgwirePort: 5432
+  httpPort: 8080
+
+statefulset:
+  image:
+    repository: ghcr.io/xtdb/xtdb-google-cloud
+    pullPolicy: IfNotPresent
+    # Overrides the image tag whose default is the chart appVersion.
+    tag: ""
+
+  replicas: 3
+  updateStrategy:
+    type: RollingUpdate
+  podManagementPolicy: Parallel
+  budget:
+    maxUnavailable: 1
+
+  securityContext: { }
+  #  capabilities:
+  #    drop:
+  #      - ALL
+  #  readOnlyRootFilesystem: true
+  #  runAsNonRoot: true
+  #  fsGroup: 2000
+  #  runAsUser: 1000
+
+  # List of extra environment variables to pass into container
+  env: [ ]
+
+  # Additional labels to apply to this StatefulSet and all its Pods.
+  labels:
+    app.kubernetes.io/component: xtdb
+
+  # Additional annotations to apply to the Pods of this StatefulSet.
+  annotations: { }
+
+  # Affinity rules for scheduling Pods of this StatefulSet on Nodes.
+  # https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#node-affinity
+  nodeAffinity: { }
+  # Inter-Pod Affinity rules for scheduling Pods of this StatefulSet.
+  # https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#inter-pod-affinity-and-anti-affinity
+  podAffinity: { }
+  # Anti-affinity rules for scheduling Pods of this StatefulSet.
+  # https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#inter-pod-affinity-and-anti-affinity
+  # You may either toggle options below for default anti-affinity rules,
+  # or specify the whole set of anti-affinity rules instead of them.
+  podAntiAffinity:
+    # The topologyKey to be used.
+    # Can be used to spread across different nodes, AZs, regions etc.
+    topologyKey: kubernetes.io/hostname
+    # Type of anti-affinity rules: either `soft`, `hard` or empty value (which
+    # disables anti-affinity rules).
+    type: soft
+    # Weight for `soft` anti-affinity rules.
+    # Does not apply for other anti-affinity types.
+    weight: 100
+
+  # Node selection constraints for scheduling Pods of this StatefulSet.
+  # https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
+  nodeSelector: { }
+
+  # PriorityClassName given to Pods of this StatefulSet
+  # https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/#priorityclass
+  priorityClassName: ""
+
+  # Taints to be tolerated by Pods of this StatefulSet.
+  # https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+  tolerations: [ ]
+
+  # https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
+  topologySpreadConstraints:
+    maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+
+  # Uncomment the following resources definitions or pass them from
+  # command line to control the CPU and memory resources allocated
+  # by Pods of this StatefulSet.
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 6144Mi
+    requests:
+      cpu: 500m
+      memory: 6144Mi
+storage:
+  # Absolute path on host to store xtdb's data.
+  # If not specified, then `emptyDir` will be used instead.
+  # If specified, but `persistentVolume.enabled` is `true`, then has no effect.
+  hostPath: ""
+
+  # If `enabled` is `true` then a PersistentVolumeClaim will be created and
+  # used to store xtdb's data, otherwise `hostPath` is used.
+  persistentVolume:
+    enabled: true
+
+    size: 50Gi
+
+    # If defined, then `storageClassName: <storageClass>`.
+    # If set to "-", then `storageClassName: ""`, which disables dynamic
+    # provisioning.
+    # If undefined or empty (default), then no `storageClassName` spec is set,
+    # so the default provisioner will be chosen (gp2 on AWS, standard on
+    # GKE, AWS & OpenStack).
+    storageClass: ""
+
+    # Additional labels to apply to the created PersistentVolumeClaims.
+    labels: { }
+    # Additional annotations to apply to the created PersistentVolumeClaims.
+    annotations: { }
+
+podMonitor:
+  enabled: true
+
+monitoring:
+  dashboards:
+    enabled: true
+  metrics:
+    enabled: true
+  alerting:
+    enabled: true
+
+xtdb:
+  kafka:
+    host: core-kafka-bootstrap.my-kafka.svc.cluster.local
+    port: 9093
+    autoCreateTopics: false
+    txTopic: xtdb-tx-log
+    filesTopic: xtdb-file-notifs
+    securityProtocol: SSL
+    tls:
+      truststoreType: PEM
+      truststorePath: /opt/kafka-tls/ca.crt
+      caSecret: my-kafka-ca-tls
+  objectStore:
+    projectId:
+    bucket:
+    prefix:

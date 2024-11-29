@@ -1,0 +1,35 @@
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  labels:
+    strimzi.io/cluster: core
+    {{- include "xtdb.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+  name: {{ .Values.xtdb.kafka.txTopic }}
+  namespace: my-kafka
+spec:
+  partitions: 1
+  replicas: 3
+  config:
+    "retention.ms": 604800000 # 7 days
+    "max.message.bytes": 1048588 # 1MB
+    "cleanup.policy": delete
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  labels:
+    strimzi.io/cluster: core
+    {{- include "xtdb.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+  name: {{ .Values.xtdb.kafka.filesTopic }}
+  namespace: my-kafka
+spec:
+  partitions: 1
+  replicas: 3
+  config:
+    "retention.ms": 3600000 # 1 hour
+    "cleanup.policy": delete

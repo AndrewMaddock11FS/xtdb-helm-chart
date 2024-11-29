@@ -1,0 +1,13 @@
+---
+{{ if .Values.monitoring.dashboards.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: xtdb
+  namespace: monitoring
+  labels: {{- include "xtdb.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+    grafana-dashboard: "true"
+  annotations: {{- include "xtdb.annotations" . | nindent 4 }}
+data: {{ (.Files.Glob "dashboards/xtdb.json").AsConfig | nindent 2 }}
+{{ end }}

@@ -1,0 +1,201 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "xtdb.fullname" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels: {{- include "xtdb.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.statefulset.replicas }}
+  serviceName: {{ template "xtdb.fullname" . }}
+  updateStrategy: {{- toYaml .Values.statefulset.updateStrategy | nindent 4 }}
+  podManagementPolicy: {{ .Values.statefulset.podManagementPolicy | quote }}
+  selector:
+    matchLabels: {{- include "xtdb.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.statefulset.annotations }}
+      annotations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "xtdb.selectorLabels" . | nindent 8 }}
+        {{- toYaml .Values.statefulset.labels | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "xtdb.serviceAccountName" . }}
+      securityContext: {{- toYaml .Values.statefulset.securityContext | nindent 8 }}
+    {{- if or .Values.statefulset.nodeAffinity .Values.statefulset.podAffinity .Values.statefulset.podAntiAffinity }}
+      affinity:
+      {{- with .Values.statefulset.nodeAffinity }}
+        nodeAffinity: {{- toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.statefulset.podAffinity }}
+        podAffinity: {{- toYaml . | nindent 10 }}
+      {{- end }}
+      {{- if .Values.statefulset.podAntiAffinity }}
+        podAntiAffinity:
+        {{- if .Values.statefulset.podAntiAffinity.type }}
+        {{- if eq .Values.statefulset.podAntiAffinity.type "hard" }}
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: {{ .Values.statefulset.podAntiAffinity.topologyKey }}
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: {{ include "xtdb.name" . }}
+                  app.kubernetes.io/instance: {{ .Release.Name | quote }}
+                {{- with .Values.statefulset.labels }}
+                  {{- toYaml . | nindent 18 }}
+                {{- end }}
+        {{- else if eq .Values.statefulset.podAntiAffinity.type "soft" }}
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: {{ .Values.statefulset.podAntiAffinity.weight | int64 }}
+              podAffinityTerm:
+                topologyKey: {{ .Values.statefulset.podAntiAffinity.topologyKey }}
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: {{ include "xtdb.name" . }}
+                    app.kubernetes.io/instance: {{ .Release.Name | quote }}
+                  {{- with .Values.statefulset.labels }}
+                    {{- toYaml . | nindent 20 }}
+                  {{- end }}
+        {{- end }}
+        {{- else }}
+          {{- toYaml .Values.statefulset.podAntiAffinity | nindent 10 }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- if semverCompare ">=1.16-0" .Capabilities.KubeVersion.Version }}
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "xtdb.name" . }}
+              app.kubernetes.io/instance: {{ .Release.Name | quote }}
+            {{- with .Values.statefulset.labels }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- with .Values.statefulset.topologySpreadConstraints }}
+          maxSkew: {{ .maxSkew }}
+          topologyKey: {{ .topologyKey }}
+          whenUnsatisfiable: {{ .whenUnsatisfiable }}
+        {{- end }}
+    {{- end }}
+    {{- with .Values.statefulset.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- if .Values.statefulset.priorityClassName }}
+      priorityClassName: {{ .Values.statefulset.priorityClassName }}
+    {{- end }}
+    {{- with .Values.statefulset.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+    {{- end }}
+      # TODO is this correct? No pre-stop hook is required, a SIGTERM plus some time is all that's
+      # needed for graceful shutdown of a node.
+      restartPolicy: Always
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.statefulset.image.repository }}:{{ .Values.statefulset.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.statefulset.image.pullPolicy }}
+          env:
+            - name: JDK_JAVA_OPTIONS
+              value: "-Xmx2g -XX:MaxDirectMemorySize=2g -XX:MaxMetaspaceSize=500m"
+            - name: ORDINAL_NUMBER
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
+            # Identifies node within metrics using a label - using index of stateful set - ie, xtdb-node-0
+            # If removed, will have a random suffix that will change on pod restart, which can be seen within logs
+            - name: XTDB_NODE_ID
+              value: "{{ include "xtdb.fullname" $ }}-node-$(ORDINAL_NUMBER)"
+          ports:
+            - name: pgwire
+              containerPort: 5432
+              protocol: TCP
+            - name: healthz
+              containerPort: 8080
+              protocol: TCP
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          volumeMounts:
+            - name: xtdb-persistent-storage
+              mountPath: /var/lib/xtdb
+            - name: config
+              mountPath: /usr/local/lib/xtdb/google_cloud_config.yaml
+              subPath: google_cloud_config.yaml
+            {{- if eq .Values.xtdb.kafka.securityProtocol "SSL" }}
+            - mountPath: /opt/kafka-tls
+              name: kafka-tls-secrets
+              readOnly: true
+            {{- end }}
+          {{- with .Values.statefulset.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          startupProbe:
+            httpGet:
+              path: /healthz/started
+              port: healthz
+            failureThreshold: 60
+            periodSeconds: 3
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz/alive
+              port: healthz
+              scheme: HTTP
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            successThreshold: 1
+            httpGet:
+              path: /healthz/ready
+              port: healthz
+              scheme: HTTP
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "xtdb.fullname" . }}-config
+            defaultMode: 0444
+            items:
+              - key: google_cloud_config.yaml
+                path: google_cloud_config.yaml
+        - name: xtdb-persistent-storage
+          persistentVolumeClaim:
+            claimName: xtdb-persistent-storage
+        {{- if eq .Values.xtdb.kafka.securityProtocol "SSL" }}
+        - name: kafka-tls-secrets
+          secret:
+            secretName: {{ .Values.xtdb.kafka.tls.caSecret }}
+        {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: xtdb-persistent-storage
+        labels:
+          app.kubernetes.io/name: {{ include "xtdb.name" . }}
+          app.kubernetes.io/instance: {{ .Release.Name | quote }}
+        {{- with .Values.storage.persistentVolume.labels }}
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.labels }}
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- with .Values.storage.persistentVolume.annotations }}
+        annotations: {{- toYaml . | nindent 10 }}
+      {{- end }}
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+      {{- if .Values.storage.persistentVolume.storageClass }}
+      {{- if (eq "-" .Values.storage.persistentVolume.storageClass) }}
+        storageClassName: ""
+      {{- else }}
+        storageClassName: {{ .Values.storage.persistentVolume.storageClass | quote}}
+      {{- end }}
+      {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.storage.persistentVolume.size | quote }}

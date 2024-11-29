@@ -1,0 +1,13 @@
+{{ if .Values.podMonitor.enabled -}}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "xtdb.fullname" . }}
+  labels: {{- include "xtdb.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels: {{- include "xtdb.selectorLabels" . | nindent 6 }}
+  podMetricsEndpoints:
+    - port: healthz
+{{- end }}
